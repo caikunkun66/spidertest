@@ -1,6 +1,19 @@
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+import mysql.connector
+
+# 连接到MySQL数据库
+mydb = mysql.connector.connect(
+  host="localhost",
+  user="yourusername",
+  password="yourpassword",
+  database="yourdatabase"
+)
+
+# 创建一个数据库表
+mycursor = mydb.cursor()
+mycursor.execute("CREATE TABLE IF NOT EXISTS products (id INT AUTO_INCREMENT PRIMARY KEY, title VARCHAR(255), image_url VARCHAR(255), link VARCHAR(255))")
 
 # 初始页面URL
 base_url = 'https://www.yapingkeji.com/product/'
@@ -51,36 +64,36 @@ while next_page_link:
     # 查找下一页链接
     next_page_link = soup.find('a', string='下一页', href=True)
 
-# 准备将输出写入到文件中
-output_filename = 'product_details.txt'
+# 将产品数据插入到数据库表中
+for link in product_links:
+    response = requests.get(link)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    
+    # 查找所有符合条件的 <div> 标签
+    div_tags = soup.find_all('div', class_='item-thumbnail')
 
-with open(output_filename, 'w', encoding='utf-8') as f:
-    for link in product_links:
-        response = requests.get(link)
-        soup = BeautifulSoup(response.content, 'html.parser')
+    # 遍历每个符合条件的 <div> 标签
+    for div_tag in div_tags:
+        # 在每个 <posts> 标签中查找 <img> <a>标签
+        img_tags = div_tag.find_all('img')
+        a_tags = div_tag.find_all('a')
         
-        # 查找所有符合条件的 <div> 标签
-        div_tags = soup.find_all('div', class_='item-thumbnail')
+        # 获取标题和链接
+        title = div_tag.find('a').get_text().strip()
+        link = div_tag.find('a')['href']
+        
+        # 输出每个 <img> 标签的 src\alt 属性值到数据库
+        for img in img_tags:
+            img_src = img.get('data-src')
+            img_alt = img.get('alt')
+            if img_src:
+                # 将数据插入到数据库表中
+                sql = "INSERT INTO products (title, image_url, link) VALUES (%s, %s, %s)"
+                val = (title, img_src, link)
+                mycursor.execute(sql, val)
+                mydb.commit()
 
-        # 遍历每个符合条件的 <div> 标签
-        for div_tag in div_tags:
-            # 在每个 <posts> 标签中查找 <img> <a>标签
-            img_tags = div_tag.find_all('img')
-            a_tags = div_tag.find_all('a')
-            
-            # 输出每个 <img> 标签的 src\alt 属性值到文件
-            for img in img_tags:
-                img_src = img.get('data-src')
-                img_alt = img.get('alt')
-                if img_src:
-                    f.write(f"Image Alt: {img_alt}\n")
-                    f.write(f"Image Src: {img_src}\n")
-            # 输出每个 <a> 标签的 href 属性值到文件
-            for a in a_tags:
-                href = a.get('href')
-                if href:
-                    f.write(f"Link Href: {href}\n")
-                    
-            f.write("\n")  # 分隔每个产品的输出
+print("产品数据已成功插入到MySQL数据库中")
 
-print(f"产品详情已保存到文件: {output_filename}")
+# 关闭数据库连接
+mydb.close()
